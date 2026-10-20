@@ -16,7 +16,7 @@
 ## 快速开始
 把仓库下载下来，然后进到那个文件夹里
 ```
-git clone <仓库地址>
+git clone https://github.com/y15154520-cmd/rag-qa.git
 cd rag-qa
 ```
 建立一个自己的venv环境（文件名必须为.venv防止被上传到github里面）
