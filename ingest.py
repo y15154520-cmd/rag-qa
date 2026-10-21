@@ -43,12 +43,87 @@ def split_into_articles(text):
       4. 第一章出现之前，PDF 开头还有标题、修正说明等内容，它们该去哪？
       5. 循环结束时，手上还拿着的最后一条，进列表了吗？
     """
-    # TODO
-    pass
+    chunks = []
+    current_chapter = None
+    current_article = None
+    current_text_lines = []
+
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue  # 跳过空行
+
+        # 判断是否是章节标题
+        chapter_match = re.match(r"^(第[一二三四五六七八九十]+章 .+)$", line)
+        if chapter_match:
+            # 如果之前有正在收集的条目，先保存它
+            if current_article and current_text_lines:
+                chunks.append({
+                    "chapter": current_chapter,
+                    "article": current_article,
+                    "text": "\n".join(current_text_lines).strip()
+                })
+
+            current_text_lines = []
+            current_chapter = chapter_match.group(1)
+            continue
+
+        # 判断是否是一条的开头
+        article_match = re.match(r"^(第[一二三四五六七八九十百零]+条) ", line)
+        if article_match:
+            # 如果之前有正在收集的条目，先保存它
+            if current_article and current_text_lines:
+                chunks.append({
+                    "chapter": current_chapter,
+                    "article": current_article,
+                    "text": "\n".join(current_text_lines).strip()
+                })
+
+                current_text_lines = []
+
+            current_article = article_match.group(1)
+            # 将当前行的内容（去掉条号）加入文本
+            current_text_lines.append(line[len(current_article):].strip())
+            continue
+
+        # 如果不是章节标题也不是条目开头，则是条目的内容
+        if current_article:
+            current_text_lines.append(line)
+
+    # 循环结束后，检查是否还有未保存的条目
+    if current_article and current_text_lines:
+        chunks.append({
+            "chapter": current_chapter,
+            "article": current_article,
+            "text": "\n".join(current_text_lines).strip()
+        })
+
+    return chunks
 
 
 if __name__ == "__main__":
     text = clean_text(load_pdf_text(PDF_PATH))
     chunks = split_into_articles(text)
     print(text[:200])
+    print(f"总共切成 {len(chunks)} 块")
+    if len(chunks) != 107:
+        print("Fail")
+    else:
+        print("Pass")
+    print(f"第一块的 article：{chunks[0]['article']}")
+    if chunks[0]['article'] != "第一条":
+        print("Fail")
+    else:
+        print("Pass")
+    print(f"最后一块的 article：{chunks[-1]['article']}")
+    if chunks[-1]['article'] != "第一百零七条":
+        print("Fail")
+    else:
+        print("Pass")
+    print(f"第45条的 chapter：{next((chunk['chapter'] for chunk in chunks if chunk['article'] == '第四十五条'), None)}")
+    if next((chunk['chapter'] for chunk in chunks if chunk['article'] == '第四十五条'), None) != "第四章 工作时间和休息休假":
+        print("Fail")
+    else:
+        print("Pass")
+    print(repr(chunks[0]['article']))
     # TODO：对照文件开头的验收标准，把每一条都检查一遍并打印结果
