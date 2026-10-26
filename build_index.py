@@ -14,7 +14,7 @@
 from pathlib import Path
 from chromadb.errors import NotFoundError
 import chromadb
-
+from chromadb.utils.embedding_functions import Text2VecEmbeddingFunction
 from ingest import PDF_PATH, load_pdf_text, clean_text, split_into_articles
 
 DB_PATH = Path(__file__).parent / "chroma_db"    # 已在 .gitignore 里
@@ -39,7 +39,8 @@ def build_collection(chunks):
         pass
     collection = client.create_collection(
         name = COLLECTION_NAME,
-        configuration = {"hnsw": {"space": "cosine"}}
+        configuration = {"hnsw": {"space": "cosine"}},
+        embedding_function = Text2VecEmbeddingFunction()
     )
 
     ids = []
@@ -70,6 +71,9 @@ if __name__ == "__main__":
     # TODO：问 "怎么请年假？"，打印前 3 名的 article / chapter / distance
     question = "怎么请年假？"
     results = search(collection, question, k=3)
-    for i, (article, chapter, distance) in enumerate(zip(results["ids"][0], results["metadatas"][0], results["distances"][0])):
-        print(f"第 {i+1} 名: article={article}, chapter={chapter}, distance={distance}")
+    for i, (article, meta, distance) in enumerate(zip(
+        results["ids"][0],
+        results["metadatas"][0],
+        results["distances"][0])):
+        print(f"第 {i+1} 名: article={article}, chapter={meta['chapter']}, distance={distance:.4f}")
 
