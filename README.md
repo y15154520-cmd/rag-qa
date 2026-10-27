@@ -8,6 +8,8 @@
 
 - 先读文档，再切块      → pypdf          （把 PDF 里的文字读出来）
 - 存向量                → chromadb
+- 中文读取模型           → text2vec
+-依赖torch环境           → torch
 - 调模型生成回答         → openai + python-dotenv   （调 DeepSeek，Key 从 .env 读）
 - 网页界面              → streamlit
 
@@ -27,7 +29,7 @@ python -m venv .venv
 ```
 .\.venv\Scripts\Activate.ps1
 ```
-根据requirements.txt安装所需要的包
+根据requirements.txt安装所需要的包(第一次安装和运行要下载1G多的内容)
 ```
 pip install -r requirements.txt
 ```
