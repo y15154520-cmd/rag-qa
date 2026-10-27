@@ -8,8 +8,8 @@
 
 - 先读文档，再切块      → pypdf          （把 PDF 里的文字读出来）
 - 存向量                → chromadb
-- 中文读取模型           → text2vec
--依赖torch环境           → torch
+- 将中文转换成向量           → text2vec
+- 依赖torch环境           → torch
 - 调模型生成回答         → openai + python-dotenv   （调 DeepSeek，Key 从 .env 读）
 - 网页界面              → streamlit
 
