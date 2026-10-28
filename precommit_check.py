@@ -30,9 +30,9 @@ def check_env_ignored():
 
 def show_changes():
     """运行 git status --short，把结果打印出来。"""
-    result = subprocess.run(["git", "status", "--short"], capture_output=True, text=True)
+    results = subprocess.run(["git", "status", "--short"], capture_output=True, text=True)
     print("Working tree changes:")
-    print(result.stdout)
+    print(results.stdout)
 
 
 if __name__ == "__main__":

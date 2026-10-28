@@ -23,16 +23,14 @@ def call_llm(prompt, model="deepseek-flash", max_tokens=2000):
     max_tokens=max_tokens,
     )
     text = response.choices[0].message.content or ""
-    prompt_usage = response.usage.prompt_tokens
-    completion_usage = response.usage.completion_tokens
     reason = response.choices[0].finish_reason
     if reason == "length":
-        raise ValueError(f"The model stopped because it reached the max token limit. Consider increasing max_tokens. Usage: {prompt_usage} + {completion_usage}")
+        raise ValueError(f"The model stopped because it reached the max token limit. Consider increasing max_tokens.")
     if text.strip() == "":
-        raise ValueError(f"The model returned an empty response. Please check the prompt or try again. Usage: {prompt_usage} + {completion_usage}")
+        raise ValueError(f"The model returned an empty response. Please check the prompt or try again.")
 
-    return text, prompt_usage, completion_usage
+    return text
 
 if __name__ == "__main__":
-    text, prompt_usage, completion_usage = call_llm(prompt, max_tokens=2000)
+    text = call_llm(prompt, max_tokens=2000)
     print(text)
