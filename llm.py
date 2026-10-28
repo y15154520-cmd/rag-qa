@@ -10,12 +10,13 @@ import os
 from openai import OpenAI
 def call_llm(prompt, model="deepseek-flash", max_tokens=2000):
     load_dotenv()
+    if not os.getenv("DEEPSEEK_API_KEY"):
+        raise ValueError("DEEPSEEK_API_KEY not found in environment variables. Please add it to your .env file.")
     client = OpenAI(
     api_key=os.getenv("DEEPSEEK_API_KEY"),  # ⚠️ 这里的 env var 名字要和你 .env 里的一致
     base_url="https://api.deepseek.com"
     )
-    if not os.getenv("DEEPSEEK_API_KEY"):
-        raise ValueError("DEEPSEEK_API_KEY not found in environment variables. Please add it to your .env file.")
+
     response = client.chat.completions.create(
     model=model,
     messages=[{"role": "user", "content": prompt}],
