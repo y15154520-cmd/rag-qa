@@ -24,7 +24,7 @@ def build_collection():
         embedding_function=Text2VecEmbeddingFunction())
     return collection
 
-def search(collection, question, k=3):
+def search(collection, question, k=5):
     """问一个问题，返回最相近的 k 块。"""
     results = collection.query(
         query_texts=[question],
@@ -55,3 +55,4 @@ if __name__ == "__main__":
         results = search(collection, question)
         prompt = build_prompt(question, results)
         print(call_llm(prompt))
+
