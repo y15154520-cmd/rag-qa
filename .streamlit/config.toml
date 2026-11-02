@@ -1,0 +1,5 @@
+[server]
+# Streamlit 默认会扫描已加载的模块来监视文件改动；
+# 扫到 transformers 里用不到的图像模块时会报 No module named torchvision。
+# 关掉监视：代价是改完代码要手动刷新页面。
+fileWatcherType = "none"
