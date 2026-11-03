@@ -44,7 +44,6 @@ if ask_question:
 
 # TODO 6（做完前面再做）：在回答下面，让用户能展开看到检索到的条款原文
 #   原文从哪里拿？—— 检索结果 results 里本来就有条号、章节、原文，不用从模型的回答里拆
-    st.info("检索到的条款原文：")
     with st.expander("点击展开查看条款原文", expanded=False):
         for i in range(len(results['ids'][0])):
             article = results['ids'][0][i]

@@ -1,40 +1,129 @@
-# rag-qa
+# rag-qa · 劳动法问答助手
 
-<!-- TODO（步骤 1 之前定）：一句话说明 —— 它能回答【什么文档】的问题？ -->
+用大白话问《中华人民共和国劳动法》的问题，系统会先从法条中检索出最相关的条款，再让大模型**只根据这些条款**作答，并标出依据的是哪一条。
 
-> 🚧 开发中
+> A retrieval-augmented QA app over the PRC Labor Law (107 articles): Chinese embeddings + Chroma for retrieval, an LLM constrained to answer only from the retrieved articles with citations, evaluated with Recall@k.
+
+![演示截图](docs/demo.png)
+
+## 它是怎么工作的
+
+```
+用户提问 "怎么请年假？"
+   │
+   ├─ ① 检索：问题转成向量（中文 embedding 模型）→ 在 Chroma 里按余弦相似度找出最相近的 5 条法条
+   │
+   ├─ ② 拼 prompt：每条法条贴上「章节 + 条号」标签，加上回答规则
+   │       · 只根据给出的条款回答，不使用模型自己的知识
+   │       · 条款只能回答一部分时，说出能回答的，也说出没写到的
+   │       · 完全不相关时，明确说没有找到
+   │
+   └─ ③ 生成：调用 DeepSeek 生成口语化的回答，最后一行写出依据条款
+```
+
+离线准备（只做一次）：PDF → 按"条"切成 107 块（每块带章节、条号）→ 向量化后存入 Chroma。
+
+## 效果
+
+### 1. 中文 embedding 模型 vs 默认英文模型
+
+同一个问题"怎么请年假？"，正确答案是第四十五条（带薪年休假）：
+
+| embedding 模型 | 第四十五条排名 | 前几名是什么 |
+|---|---|---|
+| Chroma 默认（all-MiniLM-L6-v2，英文） | 第 7 / 107 | 前 3 名都是第七章"女职工特殊保护"（产假相关） |
+| text2vec-base-chinese（本项目） | **第 3 / 107** | 前 5 名都是休息休假相关条款 |
+
+英文模型排出的结果更像是在匹配相同的汉字（"年**假**" / "产**假**"），中文模型才是在匹配意思。
+
+### 2. 检索召回率 Recall@k
+
+5 个问题、7 条人工标注的标准答案（年假、劳动仲裁及时限、每日工作时长、试用期、加班费）：
+
+| k | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| Recall@k | 2/7 | 3/7 | 6/7 | **7/7** | 7/7 | 7/7 | 7/7 | 7/7 |
+
+k=4 时召回率到顶。由于评测集很小，默认取 **k=5**，多留一档余量。
+
+k=3 时漏掉的是"加班费怎么算？"对应的第四十四条（排第 4）：用户说"加班费"，法条写的是"延长工作时间的……工资报酬"，两边用词对不上。
+
+### 3. 加不加检索
+
+| | "怎么请年假？"的回答 |
+|---|---|
+| 不给条款，直接问模型 | 给出"满 1 年 5 天、满 10 年 10 天、满 20 年 15 天"等天数，这些内容来自模型自身的记忆，**《劳动法》里并没有** |
+| 本项目 | 只说明第四十五条的规定（连续工作一年以上享受带薪年休假，具体办法由国务院规定），并指出申请流程和天数在查到的条款里没有写明 |
+
+## 几个设计决定
+
+- **按"条"切块**：法条是最小的完整语义单位。固定字数切分会把一条拦腰截断，按章切分又会把多条不相关的内容混在一起稀释语义。切块结果用"正好 107 条、首条第一条、末条第一百零七条、第四十五条属于第四章"做验收。
+- **章节和条号作为 metadata 存储**，不参与向量计算，用于回答中标注出处。
+- **余弦距离**：Chroma 默认是 L2（欧氏距离），会偏向长度短的文本块；这里显式改为余弦。
+- **每次重建索引都删表重建**：`add()` 遇到已存在的 id 会静默跳过，`upsert()` 删不掉已不存在的块，所以选择整表重建。
+- **说话的范围不超过检索到的范围**：回答里说"我查到的《劳动法》相关条款里没有写"，而不是"《劳动法》里没有规定"，因为模型只看到了检索出的几条。
+- **网页上的条款原文直接取自检索结果**，而不是从模型的回答里解析，用户可以展开核对。
 
 ## 技术栈
 
-- 先读文档，再切块      → pypdf          （把 PDF 里的文字读出来）
-- 存向量                → chromadb
-- 将中文转换成向量           → text2vec
-- 依赖torch环境           → torch
-- 调模型生成回答         → openai + python-dotenv   （调 DeepSeek，Key 从 .env 读）
-- 网页界面              → streamlit
+| 组件 | 用途 |
+|---|---|
+| pypdf | 从 PDF 中读取文字 |
+| text2vec + torch | 把中文文本转成向量（shibing624/text2vec-base-chinese） |
+| chromadb | 向量存储与检索 |
+| openai + python-dotenv | 调用 DeepSeek（OpenAI 兼容接口），API Key 从 `.env` 读取 |
+| streamlit | 网页界面 |
 
+## 快速开始（Windows PowerShell）
 
+1. 下载仓库并进入文件夹
+   ```
+   git clone https://github.com/y15154520-cmd/rag-qa.git
+   cd rag-qa
+   ```
+2. 建立虚拟环境。文件夹名必须是 `.venv`，因为 `.gitignore` 只忽略这个名字，换别的名字会被提交进仓库
+   ```
+   python -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   ```
+3. 安装依赖。首次安装和首次运行合计需要下载 1 GB 以上（torch 与中文 embedding 模型，模型从 HuggingFace 下载）
+   ```
+   pip install -r requirements.txt
+   ```
+4. 配置 API Key：复制模板，再在 `.env` 里填入自己的 DeepSeek API Key
+   ```
+   Copy-Item .env.example .env
+   ```
+5. 建立索引（只需做一次，会生成 `chroma_db/` 文件夹）
+   ```
+   python build_index.py
+   ```
+6. 启动网页
+   ```
+   streamlit run app.py
+   ```
 
-## 快速开始
-把仓库下载下来，然后进到那个文件夹里
-```
-git clone https://github.com/y15154520-cmd/rag-qa.git
-cd rag-qa
-```
-建立一个自己的venv环境（文件名必须为.venv防止被上传到github里面）
-```
-python -m venv .venv
-```
-激活venv环境
-```
-.\.venv\Scripts\Activate.ps1
-```
-根据requirements.txt安装所需要的包(第一次安装和运行要下载1G多的内容)
-```
-pip install -r requirements.txt
-```
-根据.env.example文件复制成.env文件
-```
-Copy-Item .env.example .env
-```
-并在文件里面填写自己的api key
+其他命令：
+- 命令行问答：`python answer.py`
+- 检索评测：`python eval_retrieval.py`
+
+## 文件结构
+
+| 文件 | 作用 |
+|---|---|
+| `data/labor_law.pdf` | 《中华人民共和国劳动法》（2018 年修正），来自国家法律法规数据库 |
+| `ingest.py` | 读取 PDF、清洗页码、按条切块 |
+| `build_index.py` | 向量化并存入 Chroma |
+| `answer.py` | 检索、拼 prompt、命令行问答 |
+| `llm.py` | 大模型调用的适配层（缺少 Key 时直接给出明确报错） |
+| `app.py` | Streamlit 网页 |
+| `eval_retrieval.py` | Recall@k 检索评测 |
+| `precommit_check.py` | 提交前检查 `.env` 是否被忽略 |
+
+## 已知局限
+
+- 只收录了《劳动法》一部法律，《劳动合同法》《职工带薪年休假条例》等未收录，相关问题只能回答"没有查到"。
+- 评测集只有 5 个问题，k 的选择需要更大的评测集来确认。
+- 用户用词和法条用词差距大时（如"加班费"与"延长工作时间的工资报酬"），检索仍可能排名靠后；可以尝试先改写问题再检索。
+- 回答质量目前靠人工检查，还没有自动化评估。
+- 本项目仅用于学习，回答不构成法律意见。
