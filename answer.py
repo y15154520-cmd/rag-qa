@@ -24,7 +24,7 @@ def build_collection():
         embedding_function=Text2VecEmbeddingFunction())
     return collection
 
-def search(collection, question, k=5):
+def search(collection, question, k=8):
     """问一个问题，返回最相近的 k 块。"""
     results = collection.query(
         query_texts=[question],
@@ -32,15 +32,23 @@ def search(collection, question, k=5):
     )
     return results
 
+def make_label(meta):
+    """把 meta 里的 law / chapter / section / article 拼成一个标签。"""
+    parts = [f"《{meta['law']}》", meta.get('chapter'), meta.get('section'), meta.get('article')]
+    label = " ".join([p for p in parts if p])
+    return label
 def build_prompt(question, results):
     prompt = f"请根据以下资料回答问题：\n\n"
     for i in range(len(results['documents'][0])):
         chapter = results['metadatas'][0][i].get('chapter')
-        article = results['ids'][0][i]
+        article = results['metadatas'][0][i].get('article')
+        section = results['metadatas'][0][i].get('section')
         content = results['documents'][0][i]
-        prompt += f"【{chapter} {article}】{content}\n\n"
+        law = results['metadatas'][0][i].get('law')
+        label = make_label(results['metadatas'][0][i])
+        prompt += f"【{label}】{content}\n\n"
     prompt += f"问题：{question}\n\n"
-    prompt += "用自然、口语化的一段话回答，像在跟同事解释一样，不要使用“依据”“结论”这类小标题并且在同一语境下不要重复说一些内容，能让人听明白是什么即可。请只根据以上资料回答问题，不要使用你自己的知识，如果资料能完整回答，则先写依据，再写结论；如果资料只能回答一部分，则写出能回答的部分和依据，再明确说出资料里没有的是哪一部分；如果在检索到的条款中没有找到相关规定，则请直接回答“在检索到的条款中没有找到相关规定”，不要猜测，不要补充。回答的最后另起一行，写：依据：《劳动法》第X章，X条，比如“依据：《劳动法》第四章 第四十五条”。回答里提到资料时，用“我查到的《劳动法》相关条款”这类说法，不要出现“资料”两个字。资料么覆盖的部分，个固定建议一句“建议咨询单位人事部门”。"
+    prompt += "用自然、口语化的一段话回答，像在跟同事解释一样，不要使用“依据”“结论”这类小标题并且在同一语境下不要重复说一些内容，能让人听明白是什么即可。请只根据以上资料回答问题，不要使用你自己的知识，如果资料能完整回答，则先写依据，再写结论；如果资料只能回答一部分，则写出能回答的部分和依据，再明确说出资料里没有的是哪一部分；如果在检索到的条款中没有找到相关规定，则请直接回答“在检索到的条款中没有找到相关规定”，不要猜测，不要补充。回答的最后另起一行，写：依据：《XXXXX》第X章，X条，比如“依据：《劳动法》第四章 第四十五条”，再比如“依据：《职工带薪年休假条例》第三条”。回答里提到资料时，用“我查到的相关条款”这类说法，不要出现“资料”两个字。资料没覆盖的部分，固定建议一句“建议咨询单位人事部门”。"
     return prompt
 
 

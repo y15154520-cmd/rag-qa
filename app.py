@@ -13,7 +13,7 @@
 
 import streamlit as st
 
-from answer import build_collection, search, build_prompt
+from answer import build_collection, search, build_prompt, make_label
 from llm import call_llm
 
 
@@ -25,8 +25,8 @@ def load_resources():
     return collection
 
 # TODO 2：页面标题和一句说明
-st.title("劳动法问答系统")
-st.caption("输入问题，系统会检索相关条款并给出回答。")
+st.title("劳动权益问答助手")
+st.caption("收录《劳动法》《劳动合同法》《职工带薪年休假条例》。输入问题，系统会检索相关条款并给出回答。")
 
 # TODO 3：输入框；用户输入了问题才往下走
 ask_question = st.text_input("请输入您的问题：", placeholder="例如：怎么请年假？")
@@ -36,7 +36,7 @@ if ask_question:
     with st.spinner("正在检索相关条款并生成回答，请稍候..."):
 
         collection = load_resources()
-        results = search(collection, ask_question, k=5)
+        results = search(collection, ask_question, k=8)
         prompt = build_prompt(ask_question, results)
         answer = call_llm(prompt)
 # TODO 5：显示回答（第一版：整段打印就行）
@@ -48,5 +48,6 @@ if ask_question:
         for i in range(len(results['ids'][0])):
             article = results['ids'][0][i]
             meta = results['metadatas'][0][i]
-            st.write(f"{meta['chapter']} {article}:")
+            label = make_label(meta)
+            st.write(f"{label}:")
             st.write(f"{results['documents'][0][i]}")

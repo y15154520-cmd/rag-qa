@@ -15,7 +15,7 @@ from pathlib import Path
 from chromadb.errors import NotFoundError
 import chromadb
 from chromadb.utils.embedding_functions import Text2VecEmbeddingFunction
-from ingest import PDF_PATH, load_pdf_text, clean_text, split_into_articles
+from ingest import PDF_PATH, LAWS,load_pdf_text, clean_text, split_into_articles
 
 DB_PATH = Path(__file__).parent / "chroma_db"    # 已在 .gitignore 里
 COLLECTION_NAME = "labor_law"
@@ -47,9 +47,9 @@ def build_collection(chunks):
     documents = []
     metadatas = []
     for chunk in chunks:
-        ids.append(chunk["article"])
+        ids.append(chunk["law"] + "_" + chunk["article"])
         documents.append(chunk["text"])
-        metadatas.append({"chapter": chunk["chapter"]})
+        metadatas.append({"law": chunk["law"], "chapter": chunk["chapter"], "section": chunk["section"], "article": chunk["article"]})
     collection.add(ids=ids, documents=documents, metadatas=metadatas)
     return collection
 
@@ -63,17 +63,19 @@ def search(collection, question, k=3):
 
 
 if __name__ == "__main__":
-    chunks = split_into_articles(clean_text(load_pdf_text(PDF_PATH)))
-    collection = build_collection(chunks)
-
-    # TODO：打印 collection 里的条数
-    print(collection.count())
-    # TODO：问 "怎么请年假？"，打印前 3 名的 article / chapter / distance
+    all_chunks = []
+    for law in LAWS:
+        chunks = split_into_articles(law["name"], clean_text(load_pdf_text(law["path"])))
+        all_chunks.extend(chunks)
+    collection = build_collection(all_chunks)
+    print(f"collection 里条数：{collection.count()}")
     question = "怎么请年假？"
-    results = search(collection, question, k=3)
+    results = search(collection, question, k=8)
     for i, (article, meta, distance) in enumerate(zip(
         results["ids"][0],
         results["metadatas"][0],
         results["distances"][0])):
-        print(f"第 {i+1} 名: article={article}, chapter={meta['chapter']}, distance={distance:.4f}")
+        print(f"第 {i+1} 名: article={article}, chapter={meta['chapter']}, section={meta['section']}, law={meta['law']}, distance={distance:.4f}")
+
+
 

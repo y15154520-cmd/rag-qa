@@ -8,7 +8,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 import os
 from openai import OpenAI
-def call_llm(prompt, model="deepseek-flash", max_tokens=2000):
+def call_llm(prompt, model="deepseek-flash", max_tokens=5000):
     load_dotenv()
     if not os.getenv("DEEPSEEK_API_KEY"):
         raise ValueError("DEEPSEEK_API_KEY not found in environment variables. Please add it to your .env file.")
@@ -22,6 +22,7 @@ def call_llm(prompt, model="deepseek-flash", max_tokens=2000):
     messages=[{"role": "user", "content": prompt}],
     max_tokens=max_tokens,
     )
+    #print(f"模型返回的 token 数量：{response.usage.total_tokens}")
     text = response.choices[0].message.content or ""
     reason = response.choices[0].finish_reason
     if reason == "length":
@@ -32,5 +33,6 @@ def call_llm(prompt, model="deepseek-flash", max_tokens=2000):
     return text
 
 if __name__ == "__main__":
-    text = call_llm(prompt, max_tokens=2000)
+    text= call_llm(prompt, max_tokens=5000)
     print(text)
+
