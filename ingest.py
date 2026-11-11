@@ -30,8 +30,11 @@ PDF_PATH = LAWS[0]["path"]
 PAGE_NUM_RE = re.compile(r"^[ \t]*[-－][ \t]*\d+[ \t]*[-－][ \t]*$", re.MULTILINE)
 
 CHAPTER_RE = re.compile(r"^(第[一二三四五六七八九十]+章 .+)$")
-SECTION_RE = re.compile(r"^(第[一二三四五六七八九十]+节 .+)$")  
+SECTION_RE = re.compile(r"^(第[一二三四五六七八九十]+节 .+)$")
 ARTICLE_RE = re.compile(r"^(第[一二三四五六七八九十百零]+条) ")
+# 项号：全角"（一）"或半角"(一)"都认；只认紧跟在 ：；。 后面的，
+# 避免把正文里引用的"第（一）项"误当成项号
+ITEM_RE = re.compile(r"(?<=[：；。:;])[（(][一二三四五六七八九十]+[)）]")
 
 
 def load_pdf_text(path):
@@ -100,6 +103,95 @@ def split_into_articles(law, text):
 
     flush()
     return chunks
+
+
+def split_into_items(chunk):
+    """
+    TODO（② 拆项）：把一条"有下列情形之一的……（一）……（二）……"拆成一项一块。
+
+    输入：split_into_articles 切出来的一块（一整条），例如劳动合同法第四十六条
+    返回：一个列表，每个元素是一个"小块"字典
+
+    例（第四十六条拆出来的第 3 块）：
+        {"law": "劳动合同法", "chapter": ..., "section": ..., "article": "第四十六条",
+         "item": 3,
+         "text": "有下列情形之一的，用人单位应当向劳动者支付经济补偿：（三）用人单位依照本法第四十条规定解除劳动合同的；",
+         "article_text": "（第四十六条整条原文）"}
+
+    每个小块都带 article_text = 拆之前的整条原文。只有这里还拿得到整条，
+    拆完以后 text 就只剩一项了，下游（build_index）再想要整条已经来不及。
+
+    要回答的问题（先口述再写）：
+      1. 怎么知道一条"有项"？没有项的条（比如第十条），返回什么？
+      2. 总起那句话在哪里结束？（看原文：它后面紧跟着什么符号？）
+      3. 用什么把 "（一）……（二）……" 切开？切完以后"（一）"这几个字还在不在？
+      4. 第三十八条在最后一项后面还有一段"用人单位以暴力、威胁……"，这一段怎么办？
+      5. ⚠️ 去看一眼《年休假条例》第四条的原文：它的"(一)"，括号和劳动合同法的一样吗？
+         （你已经在页码上吃过一次全角/半角的亏了）
+
+    验收（写在文件末尾的验收区）：
+      - 劳动合同法第四十六条 → 拆成几块？第 3 块的 text 是不是上面那个样子？
+      - 劳动合同法第三十八条 → 最后那段"用人单位以暴力……"有没有丢？
+      - 劳动合同法第十条（没有项）→ 原样返回 1 块
+      - 条例第四条 → 能拆开吗？
+      - 所有小块的 text 拼起来，有没有丢字？（想想怎么检查）
+    """
+    text = chunk["text"]
+    base = {**chunk, "article_text": text}     # 拆之前先记下整条原文
+    marks = list(ITEM_RE.finditer(text))
+
+    if not marks:
+        return [{**base, "item": None}]
+
+    groups = [[marks[0]]]
+    for m in marks[1:]:
+        if m.group()[1:-1] == "一":
+            groups.append([m])
+        else:
+            groups[-1].append(m)
+
+    pieces = []
+    n = 0
+    lead_start = 0
+    for gi, group in enumerate(groups):
+        lead = text[lead_start:group[0].start()]
+        group_end = groups[gi + 1][0].start() if gi + 1 < len(groups) else len(text)
+
+        bodies = []
+        for i, m in enumerate(group):
+            end = group[i + 1].start() if i + 1 < len(group) else group_end
+            bodies.append(text[m.start():end])
+
+        rest = ""
+        cut = bodies[-1].find("。")
+        if cut != -1:
+            bodies[-1], rest = bodies[-1][:cut + 1], bodies[-1][cut + 1:]
+        lead_start = group_end - len(rest)
+
+        for body in bodies:
+            n += 1
+            pieces.append({**base, "item": n, "text": lead + body})
+
+    tail = text[lead_start:]
+    if tail:
+        pieces.append({**base, "item": None, "text": tail})
+    return pieces
+
+
+def rebuild_text(pieces):
+    """从小块还原整条原文：总起句只算一次，用来检查有没有丢字。"""
+    out, prev_lead = [], None
+    for p in pieces:
+        if p["item"] is None:
+            out.append(p["text"])
+            continue
+        m = ITEM_RE.search(p["text"])
+        lead = p["text"][:m.start()]
+        if lead != prev_lead:          
+            out.append(lead)
+            prev_lead = lead
+        out.append(p["text"][m.start():])
+    return "".join(out)
 
 
 # ---------------- 验收 ----------------
@@ -182,3 +274,49 @@ if __name__ == "__main__":
     check("条例 chapter 为 None 的块数", 0, sum(1 for c in regs if c["chapter"] is None))
     art7 = find_article(regs, "第七条")
     check("条例第七条正文含 '- 2 -'", False, ("- 2 -" in art7["text"]) if art7 else None)
+
+    # ---------------- ② 拆项验收 ----------------
+    print("\n拆项：")
+    contract = [c for c in all_chunks if c["law"] == "劳动合同法"]
+
+    p46 = split_into_items(find_article(contract, "第四十六条"))
+    check("劳动合同法第四十六条 块数", 7, len(p46))
+    check("第四十六条 第 3 块",
+          "有下列情形之一的，用人单位应当向劳动者支付经济补偿：（三）用人单位依照本法第四十条规定解除劳动合同的；",
+          p46[2]["text"])
+    check("第四十六条 第 3 块 item", 3, p46[2]["item"])
+
+    p38 = split_into_items(find_article(contract, "第三十八条"))
+    check("第三十八条 尾段'用人单位以暴力'没丢", True,
+          any(p["text"].startswith("用人单位以暴力") for p in p38))
+    check("第三十八条 第 6 项不含尾段", False, "暴力" in p38[5]["text"])
+
+    p10 = split_into_items(find_article(contract, "第十条"))
+    check("劳动合同法第十条 块数", 1, len(p10))
+    check("第十条 text 原样", find_article(contract, "第十条")["text"], p10[0]["text"])
+
+    p41 = split_into_items(find_article(contract, "第四十一条"))
+    check("劳动合同法第四十一条 块数（4 项 + 3 项 + 尾段）", 8, len(p41))
+    check("第四十一条 第 5 块（第二组第一项）",
+          "裁减人员时，应当优先留用下列人员：（一）与本单位订立较长期限的固定期限劳动合同的；",
+          p41[4]["text"])
+    check("第四十一条 第 4 块不带下一组的总起句", False, "优先留用" in p41[3]["text"])
+
+    p4 = split_into_items(find_article(regs, "第四条"))
+    check("条例第四条 块数", 5, len(p4))
+
+    # 丢字检查：每一条拆完再拼回去，必须和原文一字不差；项号必须从 1 连续编号
+    lost, bad_seq = [], []
+    for c in all_chunks:
+        pieces = split_into_items(c)
+        if rebuild_text(pieces) != c["text"]:
+            lost.append(f"{c['law']}{c['article']}")
+        nums = [p["item"] for p in pieces if p["item"] is not None]
+        if nums != list(range(1, len(nums) + 1)):
+            bad_seq.append(f"{c['law']}{c['article']}")
+    check("拼回去和原文不一致的条", [], lost)
+    check("项号不连续的条", [], bad_seq)
+    check("article_text 不是整条原文的小块数", 0,
+          sum(1 for c in all_chunks for p in split_into_items(c) if p["article_text"] != c["text"]))
+    all_pieces = [p for c in all_chunks for p in split_into_items(c)]
+    print(f"  拆项后共 {len(all_pieces)} 块（拆项前 {len(all_chunks)} 块）")

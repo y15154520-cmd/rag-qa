@@ -6,18 +6,18 @@
     → 这是对照组。之后换中文模型再跑一次，两次结果放在一起比。
 
 验收：
-    - collection 里正好 107 条
+    - collection 里正好 331 块（三部法 215 条，拆项后 331 块）
     - 打印出前 3 名的 article / chapter / distance
-    - 重复运行两次，collection 里仍然是 107 条
+    - 重复运行两次，collection 里仍然是 331 块
 """
 
 from pathlib import Path
 from chromadb.errors import NotFoundError
 import chromadb
 from chromadb.utils.embedding_functions import Text2VecEmbeddingFunction
-from ingest import PDF_PATH, LAWS,load_pdf_text, clean_text, split_into_articles
+from ingest import PDF_PATH, LAWS,load_pdf_text, clean_text, split_into_articles, split_into_items
 
-DB_PATH = Path(__file__).parent / "chroma_db"    # 已在 .gitignore 里
+DB_PATH = Path(__file__).parent / "chroma_db"
 COLLECTION_NAME = "labor_law"
 
 
@@ -47,9 +47,10 @@ def build_collection(chunks):
     documents = []
     metadatas = []
     for chunk in chunks:
-        ids.append(chunk["law"] + "_" + chunk["article"])
+        ids.append(chunk["law"] + "_" + chunk["article"] + "_" + str(chunk["item"]))
         documents.append(chunk["text"])
-        metadatas.append({"law": chunk["law"], "chapter": chunk["chapter"], "section": chunk["section"], "article": chunk["article"]})
+        metadatas.append({"law": chunk["law"], "chapter": chunk["chapter"], "section": chunk["section"], "article": chunk["article"],
+                          "article_text": chunk["article_text"]})  
     collection.add(ids=ids, documents=documents, metadatas=metadatas)
     return collection
 
@@ -65,8 +66,9 @@ def search(collection, question, k=3):
 if __name__ == "__main__":
     all_chunks = []
     for law in LAWS:
-        chunks = split_into_articles(law["name"], clean_text(load_pdf_text(law["path"])))
-        all_chunks.extend(chunks)
+        articles = split_into_articles(law["name"], clean_text(load_pdf_text(law["path"])))
+        for article in articles:
+            all_chunks.extend(split_into_items(article))
     collection = build_collection(all_chunks)
     print(f"collection 里条数：{collection.count()}")
     question = "怎么请年假？"
