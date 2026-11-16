@@ -1,13 +1,11 @@
 """
 检索评测：对一组问题，检查"应该找到的条款"有没有出现在前 k 名里。
 
-只测检索，不调模型 —— 不花钱、跑得快。
-
 运行：
     python eval_retrieval.py
 """
 
-from answer import build_collection, search
+from answer import build_collection, search, search_with_rewrite
 
 # 标准答案：每个问题，应该被找到的条款（对照三部法原文逐条核对过；只收"直接回答了这个问题"的条款）
 TEST_CASES = [
@@ -86,30 +84,7 @@ def article_names(results):
     return [f"{meta.get('law')}_{meta.get('article')}" for meta in results['metadatas'][0]]
 
 
-def evaluate(collection, k):
-    """
-    对每个问题检索前 k 条，打印一行结果：问题 / 应该找到的 / 实际找到了哪几条 / 漏了哪几条。
-
-    要回答的问题：
-      1. "找到了"怎么判断？（提示：expected 里的条号，在不在前 k 名的 ids 里）
-      2. expected 是空列表的问题，这一行该怎么判断？
-      3. 最后算一个总分：所有问题加起来，应该找到的条款一共几条，实际找到了几条？
-    """
-    total_expected = 0
-    total_found = 0
-    missed = []
-    for test_case in TEST_CASES:
-        question = test_case["question"]
-        expected = test_case["expected"]
-        results = search(collection, question, k)
-        found = article_names(results)
-        missed.append([e for e in expected if e not in found])
-        total_expected += len(expected)
-        total_found += len([e for e in expected if e in found])
-    return total_expected, total_found, missed
-
-
-def find_ranks(collection, question, expected, max_k=30):
+def find_ranks(collection, question, expected, max_k=30, use_rewrite=False):
     """
     TODO（② 扩大评测集）：每条标准答案，排在第几名？
 
@@ -127,43 +102,55 @@ def find_ranks(collection, question, expected, max_k=30):
          —— 先用笨办法：自己写循环数。写出来以后再看有没有现成的方法
       3. 名次从 1 开始还是从 0 开始？列表下标从几开始？
       4. 不在列表里的那条，怎么判断、怎么处理？会不会报错？
+
+    use_rewrite：False 用 search（对照组），True 用 search_with_rewrite
     """
-    results = search(collection, question, max_k, fetch_n=collection.count())
+    if use_rewrite:
+        results = search_with_rewrite(collection, question, max_k,
+                                      fetch_n=collection.count(), per_query_k=8)
+    else:
+        results = search(collection, question, max_k, fetch_n=collection.count())
     found = article_names(results)
     ranks = {}
     for e in expected:
         if e in found:
-            ranks[e] = found.index(e) + 1 
+            ranks[e] = found.index(e) + 1
         else:
             ranks[e] = None
     return ranks
 
 
 if __name__ == "__main__":
+    MAX_K = 30
     collection = build_collection()
-    for k in range(1,9):
-        print(f"===== k = {k} =====")
-        total_expected, total_found, missed = evaluate(collection, k)
-        print(f"总分：{total_found} /{total_expected} ")
-        print(f"漏掉的条款：{missed}")
+    modes = [("原话", False), ("改写", True)]
 
-    # TODO（② 扩大评测集）：逐题打印每条标准答案的名次
-    #   期望输出长这样（数字是举例）：
-    #       加班费怎么算？
-    #           劳动法_第四十四条  第 6 名
-    #       怎么请年假？
-    #           劳动法_第四十五条  第 8 名
-    #           职工带薪年休假条例_第二条  第 7 名
-    #           ……
-    #   没找到的打印"30 名以外"
-    for test_case in TEST_CASES:
-        question = test_case["question"]
-        expected = test_case["expected"]
-        ranks = find_ranks(collection, question, expected, max_k=30)
-        print(f"问题：{question}")
-        for e in expected:
-            rank = ranks[e]
-            if rank is not None:
-                print(f"    {e}  第 {rank} 名")
-            else:
-                print(f"    {e}  排名以外")
+    per_question = {}
+    all_ranks = {}
+    for name, use_rewrite in modes:
+        per_question[name] = [
+            find_ranks(collection, tc["question"], tc["expected"], MAX_K, use_rewrite)
+            for tc in TEST_CASES
+        ]
+        all_ranks[name] = [r for ranks in per_question[name] for r in ranks.values()]
+
+    total = len(all_ranks["原话"])
+    print(f"\n===== Recall@k（共 {total} 条标准答案）=====")
+    print("k     原话            改写")
+    for k in range(1, 13):
+        row = f"{k:<6}"
+        for name, _ in modes:
+            hits = sum(1 for r in all_ranks[name] if r is not None and r <= k)
+            row += f"{hits:>2}/{total} ({hits / total:4.0%})    "
+        print(row)
+
+    def fmt(rank):
+        return f"第 {rank} 名" if rank is not None else f"{MAX_K} 名以外"
+
+    print("\n===== 逐题名次（原话 → 改写）=====")
+    for i, tc in enumerate(TEST_CASES):
+        print(f"问题：{tc['question']}")
+        for e in tc["expected"]:
+            before = per_question["原话"][i][e]
+            after = per_question["改写"][i][e]
+            print(f"    {e}  {fmt(before)} → {fmt(after)}")
