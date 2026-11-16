@@ -24,12 +24,32 @@ def build_collection():
         embedding_function=Text2VecEmbeddingFunction())
     return collection
 
-def search(collection, question, k=8):
+def search(collection, question, k=8, fetch_n=50):
     """问一个问题，返回最相近的 k 块。"""
-    results = collection.query(
+
+    raw = collection.query(
         query_texts=[question],
-        n_results=k
+        n_results=fetch_n
     )
+    seen = set()
+    ids, metadatas, documents, distances = [], [], [], []
+    for id_, meta, doc, dist in zip(raw['ids'][0], raw['metadatas'][0], raw['documents'][0], raw['distances'][0]):
+        key = (meta.get('law'), meta.get('article'))
+        if key in seen:
+            continue
+        seen.add(key)
+        ids.append(id_)
+        metadatas.append(meta)
+        documents.append(doc)
+        distances.append(dist)
+        if len(ids) >= k:
+            break
+    results = {
+        'ids': [ids],
+        'metadatas': [metadatas],
+        'documents': [documents],
+        'distances': [distances]
+    }
     return results
 
 def make_label(meta):
@@ -43,7 +63,7 @@ def build_prompt(question, results):
         chapter = results['metadatas'][0][i].get('chapter')
         article = results['metadatas'][0][i].get('article')
         section = results['metadatas'][0][i].get('section')
-        content = results['documents'][0][i]
+        content = results['metadatas'][0][i].get('article_text')
         law = results['metadatas'][0][i].get('law')
         label = make_label(results['metadatas'][0][i])
         prompt += f"【{label}】{content}\n\n"
@@ -61,6 +81,11 @@ if __name__ == "__main__":
         if question.lower() in ['exit', 'quit']:
             break
         results = search(collection, question)
+        # 调试：看看检索回来的是哪几条
+        print(f"--- 检索到 {len(results['ids'][0])} 条 ---")
+        for meta, dist in zip(results['metadatas'][0], results['distances'][0]):
+            print(f"{dist:.4f}  {meta.get('law')}  {meta.get('article')}")
+        print("---")
         prompt = build_prompt(question, results)
         print(call_llm(prompt))
 

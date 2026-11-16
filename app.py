@@ -50,4 +50,4 @@ if ask_question:
             meta = results['metadatas'][0][i]
             label = make_label(meta)
             st.write(f"{label}:")
-            st.write(f"{results['documents'][0][i]}")
+            st.write(f"{results['metadatas'][0][i].get('article_text')}")

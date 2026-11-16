@@ -81,6 +81,11 @@ TEST_CASES = [
 ]
 
 
+def article_names(results):
+    """把检索结果的 metadata 拼成条名列表，如 ["劳动法_第四十五条", ...]，顺序不变。"""
+    return [f"{meta.get('law')}_{meta.get('article')}" for meta in results['metadatas'][0]]
+
+
 def evaluate(collection, k):
     """
     对每个问题检索前 k 条，打印一行结果：问题 / 应该找到的 / 实际找到了哪几条 / 漏了哪几条。
@@ -97,7 +102,7 @@ def evaluate(collection, k):
         question = test_case["question"]
         expected = test_case["expected"]
         results = search(collection, question, k)
-        found = results['ids'][0]
+        found = article_names(results)
         missed.append([e for e in expected if e not in found])
         total_expected += len(expected)
         total_found += len([e for e in expected if e in found])
@@ -123,14 +128,14 @@ def find_ranks(collection, question, expected, max_k=30):
       3. 名次从 1 开始还是从 0 开始？列表下标从几开始？
       4. 不在列表里的那条，怎么判断、怎么处理？会不会报错？
     """
-    results = search(collection, question, max_k)
-    found = results['ids'][0]
+    results = search(collection, question, max_k, fetch_n=collection.count())
+    found = article_names(results)
     ranks = {}
     for e in expected:
         if e in found:
-            ranks[e] = found.index(e) + 1  # 名次从 1 开始
+            ranks[e] = found.index(e) + 1 
         else:
-            ranks[e] = None  # 没找到
+            ranks[e] = None
     return ranks
 
 

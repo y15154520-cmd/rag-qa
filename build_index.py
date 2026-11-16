@@ -50,11 +50,11 @@ def build_collection(chunks):
         ids.append(chunk["law"] + "_" + chunk["article"] + "_" + str(chunk["item"]))
         documents.append(chunk["text"])
         metadatas.append({"law": chunk["law"], "chapter": chunk["chapter"], "section": chunk["section"], "article": chunk["article"],
-                          "article_text": chunk["article_text"]})  
+                          "article_text": chunk["article_text"]})
     collection.add(ids=ids, documents=documents, metadatas=metadatas)
     return collection
 
-def search(collection, question, k=3):
+def search(collection, question, k=8):
     """问一个问题，返回最相近的 k 块。"""
     results = collection.query(
         query_texts=[question],
