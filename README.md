@@ -2,6 +2,8 @@
 
 用大白话问打工人常碰到的劳动问题（年假、加班、试用期、劳动仲裁……），系统会先从法条中检索出最相关的条款，再让大模型**只根据这些条款**作答，并标出依据的是哪部法的哪一条。
 
+🌐 **在线体验**：<https://modelscope.cn/studios/wyh0410/law_assistance>（部署在魔搭 ModelScope 创空间，国内可直接打开，无需安装）
+
 收录三部法规，共 215 条：《中华人民共和国劳动法》（107 条）、《中华人民共和国劳动合同法》（98 条）、《职工带薪年休假条例》（10 条）。
 
 > A retrieval-augmented QA app over three PRC labor statutes (215 articles, 331 retrieval chunks): Chinese embeddings + Chroma for retrieval, enumerated articles split into item-level chunks (small-to-big retrieval with per-article dedupe), an LLM constrained to answer only from the retrieved articles with law-and-article citations, evaluated with Recall@k on 18 annotated questions.
@@ -121,6 +123,19 @@
 - **网页上的条款原文直接取自检索结果**，而不是从模型的回答里解析，用户可以展开核对。
 - **`max_tokens` 设为 5000**：模型回答前会先"思考"，思考用的 token 也计入上限，而且同一个问题每次思考的长度不同。设为 2000 时，测试中同一个问题时而成功、时而被截断。上限只是封顶，按实际用量计费，调高不会多花钱。
 
+## 部署（魔搭 ModelScope 创空间）
+
+| 问题 | 做法 |
+|---|---|
+| 放在哪 | 魔搭创空间（Streamlit、免费 CPU）。Streamlit Community Cloud 和 Hugging Face Spaces 在国内都打不开；国内云服务器对外提供网站需要 ICP 备案 |
+| 索引从哪来 | 本地建好 `chroma_db/`（5.5 MB）一起上传，不在服务器启动时重建：平台休眠后被唤醒时，第一个访问的人不用等建索引。代价是每次改切块都要重新上传；`chromadb` 版本钉死，保证服务器能读本地建的索引 |
+| embedding 模型 | 国内服务器连不上 huggingface.co，通过环境变量 `HF_ENDPOINT` 改从镜像站下载（必须在 import 之前设置） |
+| API Key | 放在平台的密文变量里，不进代码、不上传 `.env`；网站单独用一把 Key，出问题可以单独作废 |
+| 防刷 | DeepSeek 预付费，账户只放少量余额作为封顶；调用失败（如余额用完）时页面提示"暂时不可用"，详细原因只写进平台日志 |
+| torch | 平台镜像自带 torch，部署用的依赖清单不再写 torch，避免删掉重装 |
+
+部署用的是一份精简文件：`app.py`、`answer.py`、`llm.py`、精简后的 `requirements.txt`、`.streamlit/config.toml`、`chroma_db/`（不含 `data/`、建索引和评测脚本、`.env`）。
+
 ## 技术栈
 
 | 组件 | 用途 |
@@ -187,4 +202,5 @@
 - 改写模式的评测每次结果不同，目前只跑了单次；更可靠的做法是同一题跑多次取平均，或把改写结果缓存下来复用。
 - 网页没有开启改写，用户用词和法条用词差距大时（如"不签合同要赔偿"与"未订立书面劳动合同"），检索仍可能排名靠后。
 - 回答质量目前靠人工检查，还没有自动化评估。
+- 线上版本还没有按访客限制提问次数，也没有缓存相同问题的回答，目前只靠账户余额封顶。
 - 本项目仅用于学习，回答不构成法律意见。
