@@ -141,11 +141,7 @@ def make_label(meta):
 def build_prompt(question, results):
     prompt = f"请根据以下资料回答问题：\n\n"
     for i in range(len(results['documents'][0])):
-        chapter = results['metadatas'][0][i].get('chapter')
-        article = results['metadatas'][0][i].get('article')
-        section = results['metadatas'][0][i].get('section')
         content = results['metadatas'][0][i].get('article_text')
-        law = results['metadatas'][0][i].get('law')
         label = make_label(results['metadatas'][0][i])
         prompt += f"【{label}】{content}\n\n"
     prompt += f"问题：{question}\n\n"

@@ -187,7 +187,7 @@ def rebuild_text(pieces):
             continue
         m = ITEM_RE.search(p["text"])
         lead = p["text"][:m.start()]
-        if lead != prev_lead:          
+        if lead != prev_lead:
             out.append(lead)
             prev_lead = lead
         out.append(p["text"][m.start():])
@@ -263,7 +263,9 @@ if __name__ == "__main__":
             art44 = find_article(chunks, "第四十四条")
             check("第四十四条正文含 '百分之三百'", True,
                   ("百分之三百" in art44["text"]) if art44 else None)
-
+        elif name == "劳动合同法":
+            art51 = find_article(chunks, "第五十一条")
+            check("第五十一条属于 第一节 集体合同", "第一节 集体合同", art51["section"] if art51 else None)
         report_duplicates(chunks)
 
     print("\n三部法汇总：")
