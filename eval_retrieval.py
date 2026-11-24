@@ -5,7 +5,7 @@
     python eval_retrieval.py
 """
 
-from answer import build_collection, search, search_with_rewrite
+from answer import build_collection, search
 
 # 标准答案：每个问题，应该被找到的条款（对照三部法原文逐条核对过；只收"直接回答了这个问题"的条款）
 TEST_CASES = [
@@ -84,27 +84,21 @@ def article_names(results):
     return [f"{meta.get('law')}_{meta.get('article')}" for meta in results['metadatas'][0]]
 
 
-def find_ranks(collection, question, expected, max_k=30, use_rewrite=False):
+def find_ranks(collection, question, expected, max_k=30):
     """
     每条标准答案在检索结果里排第几名。
 
     输入：
-        question     一个问题，如 "加班费怎么算？"
-        expected     这题的标准答案列表，如 ["劳动法_第四十四条"]
-        max_k        最多看到第几名（超过就算"没找到"）
-        use_rewrite  False 用 search（原话），True 用 search_with_rewrite（原话 + 改写）
+        question  一个问题，如 "加班费怎么算？"
+        expected  这题的标准答案列表，如 ["劳动法_第四十四条"]
+        max_k     最多看到第几名（超过就算"没找到"）
     返回：
         标准答案 → 名次（从 1 开始）；前 max_k 名里没有的 → None
         例：{"劳动法_第四十四条": 6}
 
-    每题只检索一次，所有 k 的 Recall 都从这一份名次算出来（前 5 名就是前 30 名的前 5 个），
-    改写模式下也保证每题只改写一次。per_query_k 和网页一致取 8，评测配置要和线上一致。
+    每题只检索一次，所有 k 的 Recall 都从这一份名次算出来（前 5 名就是前 30 名的前 5 个）。
     """
-    if use_rewrite:
-        results = search_with_rewrite(collection, question, max_k,
-                                      fetch_n=collection.count(), per_query_k=8)
-    else:
-        results = search(collection, question, max_k, fetch_n=collection.count())
+    results = search(collection, question, max_k, fetch_n=collection.count())
     found = article_names(results)
     ranks = {}
     for e in expected:
@@ -118,34 +112,21 @@ def find_ranks(collection, question, expected, max_k=30, use_rewrite=False):
 if __name__ == "__main__":
     MAX_K = 30
     collection = build_collection()
-    modes = [("原话", False), ("改写", True)]
 
-    per_question = {}
-    all_ranks = {}
-    for name, use_rewrite in modes:
-        per_question[name] = [
-            find_ranks(collection, tc["question"], tc["expected"], MAX_K, use_rewrite)
-            for tc in TEST_CASES
-        ]
-        all_ranks[name] = [r for ranks in per_question[name] for r in ranks.values()]
+    per_question = [find_ranks(collection, tc["question"], tc["expected"], MAX_K) for tc in TEST_CASES]
+    all_ranks = [r for ranks in per_question for r in ranks.values()]
 
-    total = len(all_ranks["原话"])
+    total = len(all_ranks)
     print(f"\n===== Recall@k（共 {total} 条标准答案）=====")
-    print("k     原话            改写")
     for k in range(1, 13):
-        row = f"{k:<6}"
-        for name, _ in modes:
-            hits = sum(1 for r in all_ranks[name] if r is not None and r <= k)
-            row += f"{hits:>2}/{total} ({hits / total:4.0%})    "
-        print(row)
+        hits = sum(1 for r in all_ranks if r is not None and r <= k)
+        print(f"k={k:<4}{hits:>2}/{total} ({hits / total:4.0%})")
 
     def fmt(rank):
         return f"第 {rank} 名" if rank is not None else f"{MAX_K} 名以外"
 
-    print("\n===== 逐题名次（原话 → 改写）=====")
-    for i, tc in enumerate(TEST_CASES):
+    print("\n===== 逐题名次 =====")
+    for tc, ranks in zip(TEST_CASES, per_question):
         print(f"问题：{tc['question']}")
         for e in tc["expected"]:
-            before = per_question["原话"][i][e]
-            after = per_question["改写"][i][e]
-            print(f"    {e}  {fmt(before)} → {fmt(after)}")
+            print(f"    {e}  {fmt(ranks[e])}")
