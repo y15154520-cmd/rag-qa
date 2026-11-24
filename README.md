@@ -136,6 +136,21 @@
 
 部署用的是一份精简文件：`app.py`、`answer.py`、`llm.py`、精简后的 `requirements.txt`、`.streamlit/config.toml`、`chroma_db/`（不含 `data/`、建索引和评测脚本、`.env`）。
 
+## 作为 MCP 工具给 AI 调用
+
+`mcp_server.py` 把检索包成了一个 [MCP](https://modelcontextprotocol.io) 工具 `search_labor_law(question)`：Claude Code 这类支持 MCP 的 AI 应用可以自己调用它查法条，再用返回的原文作答。
+
+```
+python mcp_server.py                     # 启动后在 http://localhost:8000/mcp 提供服务
+claude mcp add --transport http labor-law http://localhost:8000/mcp   # 接进 Claude Code
+```
+
+- **只检索，不生成**：调用方本身就是大模型，会自己读条款写回答。工具里再调一次 DeepSeek 等于两个模型做同一件事，多花钱、多等几秒
+- **返回整条原文 + 标签**（法名、章、节、条号），调用方可以直接引用"《劳动合同法》第三十八条"
+- **docstring 就是给 AI 看的说明书**：写清能查哪三部法、什么时候该用、参数怎么填、哪些问题查不到（如工伤）。实测问"公司拖欠工资怎么办？"，Claude 调用了工具并引用劳动合同法第三十八条；问工伤，它没有调用工具，说明了超出范围
+- **边界**：工具能决定返回什么、说明怎么写；调用方的模型最后怎么回答（例如查不到时是否用自己的知识补充），由调用方控制
+- 模型和数据库在启动时加载一次（写在文件最外层），之后每次调用只做检索
+
 ## 技术栈
 
 | 组件 | 用途 |
@@ -193,6 +208,7 @@
 | `llm.py` | 大模型调用的适配层（缺少 Key 时直接给出明确报错） |
 | `app.py` | Streamlit 网页 |
 | `eval_retrieval.py` | Recall@k 检索评测 + 每条标准答案的名次报告（原话 vs 改写对照） |
+| `mcp_server.py` | MCP 工具：把检索提供给 Claude 等 AI 应用调用 |
 | `precommit_check.py` | 提交前检查 `.env` 是否被忽略 |
 
 ## 已知局限
