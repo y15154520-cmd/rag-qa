@@ -141,7 +141,7 @@ def make_label(meta):
 def build_prompt(question, results):
     prompt = f"请根据以下资料回答问题：\n\n"
     for i in range(len(results['documents'][0])):
-        content = results['metadatas'][0][i].get('article_text')
+        content = results['metadatas'][0][i]['article_text']  # 缺了就报错，别让 None 混进 prompt
         label = make_label(results['metadatas'][0][i])
         prompt += f"【{label}】{content}\n\n"
     prompt += f"问题：{question}\n\n"
