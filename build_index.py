@@ -1,21 +1,20 @@
 """
-步骤 2：把切好的 107 块存进 Chroma，并做一次检索实验。
+建立向量索引：三部法切块、拆项后（共 331 块）用中文 embedding 模型向量化，存入 Chroma。
 
-实验 A（本文件第一版）：用 Chroma 默认的 embedding 模型（all-MiniLM-L6-v2，英文训练）
-    问 "怎么请年假？"，看第四十五条（带薪年休假）排第几。
-    → 这是对照组。之后换中文模型再跑一次，两次结果放在一起比。
+运行（生成 chroma_db/ 文件夹）：
+    python build_index.py
 
-验收：
-    - collection 里正好 331 块（三部法 215 条，拆项后 331 块）
-    - 打印出前 3 名的 article / chapter / distance
-    - 重复运行两次，collection 里仍然是 331 块
+每次运行都删表重建，重复运行结果不变（仍是 331 块）。
+最后用"怎么请年假？"做一次检索，打印前几名，作为冒烟测试。
 """
 
 from pathlib import Path
-from chromadb.errors import NotFoundError
+
 import chromadb
+from chromadb.errors import NotFoundError
 from chromadb.utils.embedding_functions import Text2VecEmbeddingFunction
-from ingest import PDF_PATH, LAWS,load_pdf_text, clean_text, split_into_articles, split_into_items
+
+from ingest import LAWS, load_pdf_text, clean_text, split_into_articles, split_into_items
 
 DB_PATH = Path(__file__).parent / "chroma_db"
 COLLECTION_NAME = "labor_law"
@@ -25,12 +24,10 @@ def build_collection(chunks):
     """
     把块存进 Chroma，返回 collection。
 
-    要回答的问题（先想清楚再写）：
-      1. 距离度量用什么？Chroma 的默认值是什么？
-      2. add() 要三个列表：ids / documents / metadatas，第 i 个位置对应第 i 块。
-         每一块的这三样分别是什么？
-      3. id 用什么？要求：每块唯一；重复运行时，同一条法律的 id 不变。
-      4. 运行第二次时会发生什么？collection 里会变成 214 条吗？
+    - 距离用余弦（Chroma 默认是 L2，会偏向短文本）
+    - 删表重建：add() 遇到已存在的 id 会静默跳过，upsert() 删不掉已不存在的块
+    - id = 法名_条号_项号（如 劳动合同法_第四十六条_3），三部法都有"第一条"，一条又会拆成几块
+    - documents 存拆好的小块（用来比相似度），metadata 里另存整条原文 article_text（交给模型和展示）
     """
     client = chromadb.PersistentClient(path=DB_PATH)
     try:
@@ -54,8 +51,9 @@ def build_collection(chunks):
     collection.add(ids=ids, documents=documents, metadatas=metadatas)
     return collection
 
+
 def search(collection, question, k=8):
-    """问一个问题，返回最相近的 k 块。"""
+    """冒烟测试用：返回最相近的 k 块（不按条去重；正式检索见 answer.search）。"""
     results = collection.query(
         query_texts=[question],
         n_results=k

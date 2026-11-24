@@ -31,7 +31,7 @@ TEST_CASES = [
     {"question": "加班费怎么算？",
      "expected": ["劳动法_第四十四条"]},
 
-    # ---------- ② 扩大评测集（2026-11-11 新增 13 题，标准同上） ----------
+    # ---------- 扩充的 13 题（覆盖三部法，标注标准同上） ----------
     # 劳动合同法第十条：未同时订立的，自用工之日起一个月内订立
     # （劳动法第十六条只说"应当订立"，没说多久，不算）
     {"question": "入职多久公司必须跟我签劳动合同？",
@@ -86,24 +86,19 @@ def article_names(results):
 
 def find_ranks(collection, question, expected, max_k=30, use_rewrite=False):
     """
-    TODO（② 扩大评测集）：每条标准答案，排在第几名？
+    每条标准答案在检索结果里排第几名。
 
     输入：
-        question  一个问题，如 "加班费怎么算？"
-        expected  这题的标准答案列表，如 ["劳动法_第四十四条"]
-        max_k     最多看到第几名（超过就算"没找到"）
+        question     一个问题，如 "加班费怎么算？"
+        expected     这题的标准答案列表，如 ["劳动法_第四十四条"]
+        max_k        最多看到第几名（超过就算"没找到"）
+        use_rewrite  False 用 search（原话），True 用 search_with_rewrite（原话 + 改写）
     返回：
-        一个字典，标准答案 → 名次（从 1 开始数）；前 max_k 名里没有的 → None
+        标准答案 → 名次（从 1 开始）；前 max_k 名里没有的 → None
         例：{"劳动法_第四十四条": 6}
 
-    要回答的问题（先口述再写）：
-      1. 要检索几条？k 是多少？
-      2. 拿到 results['ids'][0] 这个列表以后，怎么知道某个 id 排在第几？
-         —— 先用笨办法：自己写循环数。写出来以后再看有没有现成的方法
-      3. 名次从 1 开始还是从 0 开始？列表下标从几开始？
-      4. 不在列表里的那条，怎么判断、怎么处理？会不会报错？
-
-    use_rewrite：False 用 search（对照组），True 用 search_with_rewrite
+    每题只检索一次，所有 k 的 Recall 都从这一份名次算出来（前 5 名就是前 30 名的前 5 个），
+    改写模式下也保证每题只改写一次。per_query_k 和网页一致取 8，评测配置要和线上一致。
     """
     if use_rewrite:
         results = search_with_rewrite(collection, question, max_k,
