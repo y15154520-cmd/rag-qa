@@ -1,9 +1,8 @@
 """
-步骤 3：检索 + 生成。问一个问题 → 从 Chroma 找出最相关的 3 条 → 拼进 prompt → 让模型回答并标出依据。
+检索 + 生成：问一个问题 → 从 Chroma 检索最相关的 8 条法条 → 拼进 prompt → 让模型回答并标出依据。
 
-验收：
-    - 问 "怎么请年假？"：回答里引用了第四十五条
-    - 问一个检索结果里答不了的问题：回答是 "在检索到的条款中没有找到相关规定"，没有编造
+命令行问答（检索时会先改写问题，并打印检索结果，方便观察）：
+    python answer.py
 """
 
 from pathlib import Path
@@ -18,14 +17,22 @@ COLLECTION_NAME = "labor_law"
 
 
 def build_collection():
+    """打开 build_index.py 建好的向量库（同时加载中文 embedding 模型）。"""
     client = chromadb.PersistentClient(path=DB_PATH)
     collection = client.get_collection(
         name=COLLECTION_NAME,
         embedding_function=Text2VecEmbeddingFunction())
     return collection
 
+
 def search(collection, question, k=8, fetch_n=50):
-    """问一个问题，返回最相近的 k 块。"""
+    """
+    检索 k 条不同的法条。
+
+    一条长法条按项拆成了几块，可能一条占好几个名额，所以先多取 fetch_n 块，
+    同一条（法名 + 条号）只留排得最靠前的一块，凑够 k 条就停。
+    返回值的结构和 collection.query 一样（每个字段外面套一层列表）。
+    """
 
     raw = collection.query(
         query_texts=[question],
@@ -55,17 +62,13 @@ def search(collection, question, k=8, fetch_n=50):
 
 def rewrite_query(question):
     """
-    TODO（问题改写）：把用户的大白话改写成法条里会出现的说法。
+    用大模型把用户的大白话改写成法条里会出现的说法，用于检索。
 
-    例：
-        "公司一直不跟我签合同，我能要求什么赔偿？"
+    例："公司一直不跟我签合同，我能要求什么赔偿？"
         → "用人单位未与劳动者订立书面劳动合同，应当支付二倍的工资"
 
-    要回答的问题（先口述再写）：
-      1. prompt 里要写清楚哪几件事？（至少：要它做什么 / 范围是劳动法规 / 只输出一句话、不要解释）
-      2. 要不要在 prompt 里给一两个"原话 → 改写"的例子？给的话，例子能不能用评测集里的题？
-         （提示：用评测题当例子 = 考试前把答案告诉它，分数会虚高）
-      3. 模型返回的文字，要不要 .strip()？万一它还是加了引号或"改写："，怎么办？
+    prompt 里的两个示例故意不取自评测集，避免评测分数虚高。
+    改写失败时退回原话：改写只是增强，不能因为它让整个检索挂掉。
     """
     prompt = (
         "你是中国劳动法规方面的检索助手。请把用户的口语化问题，改写成《劳动法》《劳动合同法》"
@@ -98,13 +101,14 @@ def rewrite_query(question):
 
 def search_with_rewrite(collection, question, k=8, fetch_n=50, per_query_k=8):
     """
-    TODO（问题改写）：原话和改写各检索一次，合并成 k 条。
+    原话和改写句各检索 per_query_k 条，合并成 k 条。
 
-    要回答的问题（先口述再写）：
-      1. 两次检索各拿回一份结果，同一条法条可能两份里都有，距离不一样 —— 保留哪个？
-      2. 合并以后按什么排序？排完取前 k 条
-      3. 返回值还要保持 search 的样子（ids / metadatas / documents / distances，外面套一层列表）
-      4. 调试用：把改写后的句子打印出来，不然你不知道它到底改成了什么
+    合并按"最好名次"排序（平手时两份都找到的优先），不直接比距离：
+    改写句长得像法条原文，距离天然偏小，不同问题的距离不在同一个尺度上。
+    返回值结构同 search，另加 'scores'（每条的最好名次）。
+
+    评测结果：Recall@5 23 → 26，Recall@8 的差距在运行波动范围内，所以网页没有启用，
+    只在命令行问答里使用（详见 README）。
     """
     rewritten = rewrite_query(question)
     print(f"[改写] {question} → {rewritten}")
@@ -138,7 +142,10 @@ def make_label(meta):
     parts = [f"《{meta['law']}》", meta.get('chapter'), meta.get('section'), meta.get('article')]
     label = " ".join([p for p in parts if p])
     return label
+
+
 def build_prompt(question, results):
+    """把检索到的每条法条（标签 + 整条原文）和回答规则拼成 prompt。"""
     prompt = f"请根据以下资料回答问题：\n\n"
     for i in range(len(results['documents'][0])):
         content = results['metadatas'][0][i]['article_text']  # 缺了就报错，别让 None 混进 prompt
@@ -158,7 +165,7 @@ if __name__ == "__main__":
         if question.lower() in ['exit', 'quit']:
             break
         results = search_with_rewrite(collection, question)
-        # 调试：看看检索回来的是哪几条
+        # 打印检索结果，方便核对回答依据了哪几条
         print(f"--- 检索到 {len(results['ids'][0])} 条 ---")
         print("距离    法律  条    最好名次")
         for meta, dist, best_rank in zip(results['metadatas'][0], results['distances'][0], results['scores'][0]):
